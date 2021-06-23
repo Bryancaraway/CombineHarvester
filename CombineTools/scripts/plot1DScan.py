@@ -36,7 +36,7 @@ def BuildScan(scan, param, files, color, yvals, ycut):
     graph = read(scan, param, files, ycut)
     bestfit = None
     for i in xrange(graph.GetN()):
-        if graph.GetY()[i] == 0.:
+        if graph.GetY()[i] == min(graph.GetY()):
             bestfit = graph.GetX()[i]
     graph.SetMarkerColor(color)
     spline = ROOT.TSpline3("spline3", graph)
@@ -99,7 +99,7 @@ parser.add_argument('--main-color', default=1, type=int, help='line and marker c
 parser.add_argument('--others', nargs='*', help='add secondary scans processed as main: FILE:LABEL:COLOR')
 parser.add_argument('--breakdown', help='do quadratic error subtraction using --others')
 parser.add_argument('--logo', default='CMS')
-parser.add_argument('--logo-sub', default='Internal')
+parser.add_argument('--logo-sub', default='Preliminary')
 args = parser.parse_args()
 
 print '--------------------------------------'
@@ -107,13 +107,29 @@ print  args.output
 print '--------------------------------------'
 
 fixed_name = args.POI
+
+name_translate = {
+    'cbW'  : 'c_{bW} /#Lambda^{2}',
+    'cptb' : 'c_{#phitb} /#Lambda^{2}',
+    'cpt'  : 'c_{#phit} /#Lambda^{2}',
+    'ctp'  : 'c_{t#phi} /#Lambda^{2}',
+    'ctZ'  : 'c_{tZ} /#Lambda^{2}',
+    'ctW'  : 'c_{tW} /#Lambda^{2}',
+    'cpQ3' : 'c_{#phiQ}^{3} /#Lambda^{2}',
+    'cpQM' : 'c_{#phiQ}^{#minus} /#Lambda^{2}',
+}
+
 if args.translate is not None:
     with open(args.translate) as jsonfile:
         name_translate = json.load(jsonfile)
     if args.POI in name_translate:
         fixed_name = name_translate[args.POI]
 
-yvals = [1., 4.]
+elif args.POI in name_translate:
+    fixed_name = name_translate[args.POI]
+
+#yvals = [1., 4.]
+yvals = [0.98894648, 3.84145882]
 
 
 main_scan = BuildScan(args.output, args.POI, [args.main], args.main_color, yvals, args.y_cut)
@@ -136,7 +152,7 @@ axishist = plot.GetAxisHist(pads[0])
 
 axishist.SetMaximum(args.y_max)
 axishist.GetYaxis().SetTitle("- 2 #Delta ln L")
-axishist.GetXaxis().SetTitle("%s" % fixed_name)
+axishist.GetXaxis().SetTitle("%s [TeV^{-2}]" % fixed_name)
 
 new_min = axishist.GetXaxis().GetXmin()
 new_max = axishist.GetXaxis().GetXmax()
@@ -186,15 +202,15 @@ crossings = main_scan['crossings']
 val_nom = main_scan['val']
 val_2sig = main_scan['val_2sig']
 
-textfit = '%s = %.3f{}^{#plus %.3f}_{#minus %.3f}' % (fixed_name, val_nom[0], val_nom[1], abs(val_nom[2]))
+textfit = '%s = %.2f{}^{#plus %.2f(68%% CL) %.2f(95%% CL)}_{#minus %.2f(68%% CL) %.2f(95%% CL)}' % (fixed_name, val_nom[0], val_nom[1], val_2sig[1], abs(val_nom[2]), abs(val_2sig[2]))
 
 
-pt = ROOT.TPaveText(0.59, 0.82 - len(other_scans)*0.08, 0.95, 0.91, 'NDCNB')
+pt = ROOT.TPaveText(0.45, 0.82 - len(other_scans)*0.08, 0.95, 0.91, 'NDCNB')
 pt.AddText(textfit)
 
 if args.breakdown is None:
     for i, other in enumerate(other_scans):
-        textfit = '#color[%s]{%s = %.3f{}^{#plus %.3f}_{#minus %.3f}}' % (other_scans_opts[i][2], fixed_name, other['val'][0], other['val'][1], abs(other['val'][2]))
+        textfit = '#color[%s]{%s = %.2f{}^{#plus %.2f}_{#minus %.2f}}' % (other_scans_opts[i][2], fixed_name, other['val'][0], other['val'][1], abs(other['val'][2]))
         pt.AddText(textfit)
 
 
@@ -212,7 +228,7 @@ if args.breakdown is not None:
         v_hi.append(other['val'][1])
         v_lo.append(other['val'][2])
     assert(len(v_hi) == len(breakdown))
-    textfit = '%s = %.3f' % (fixed_name, val_nom[0])
+    textfit = '%s = %.2f' % (fixed_name, val_nom[0])
     for i, br in enumerate(breakdown):
         if i < (len(breakdown) - 1):
             if (abs(v_hi[i+1]) > abs(v_hi[i])):
@@ -228,17 +244,23 @@ if args.breakdown is not None:
         else:
             hi = v_hi[i]
             lo = v_lo[i]
-        textfit += '{}^{#plus %.3f}_{#minus %.3f}(%s)' % (hi, abs(lo), br)
+        textfit += '{}^{#plus %.2f}_{#minus %.2f}(%s)' % (hi, abs(lo), br)
     pt.AddText(textfit)
 
 
 pt.SetTextAlign(11)
 pt.SetTextFont(42)
+#pt.SetTextSize(.035)
 pt.Draw()
 
 plot.DrawCMSLogo(pads[0], args.logo, args.logo_sub, 11, 0.045, 0.035, 1.2,  cmsTextSize = 1.)
 
+lumi = ROOT.TLatex()
+lumi.SetTextSize(0.04)
+lumi.DrawLatexNDC(0.74,0.95,"#bf{137 fb^{-1} (13 TeV)}")
+
 legend_l = 0.69
+
 if len(other_scans) > 0:
     legend_l = legend_l - len(other_scans) * 0.04
 legend = ROOT.TLegend(0.15, legend_l, 0.45, 0.78, '', 'NBNDC')
@@ -252,7 +274,7 @@ for i, other in enumerate(other_scans):
 legend.Draw()
 
 save_graph = main_scan['graph'].Clone()
-save_graph.GetXaxis().SetTitle('%s = %.3f %+.3f/%+.3f' % (fixed_name, val_nom[0], val_nom[2], val_nom[1]))
+save_graph.GetXaxis().SetTitle('%s = %.2f %+.2f/%+.2f' % (fixed_name, val_nom[0], val_nom[2], val_nom[1]))
 outfile = ROOT.TFile(args.output+'.root', 'RECREATE')
 outfile.WriteTObject(save_graph)
 outfile.Close()
